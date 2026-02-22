@@ -230,36 +230,54 @@ class EntitySchedulerWrapper extends HTMLElement {
             padding: 8px 12px;
             font-size: 13px;
             display: flex;
-            justify-content: space-between;
-            align-items: center;
+            flex-direction: column;
+            gap: 6px;
             border-bottom-left-radius: var(--ha-card-border-radius, 12px);
             border-bottom-right-radius: var(--ha-card-border-radius, 12px);
             opacity: 0;
             pointer-events: none;
-            transition: opacity 0.3s;
+            overflow: hidden;
+            max-height: 36px;
+            box-sizing: border-box;
+            transition: max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1), padding 0.3s, opacity 0.3s;
             z-index: 10;
         `;
 
-        this._overlayTemplate.innerHTML = `
-            <div style="flex: 1; font-weight: 500; text-shadow: 0 1px 2px rgba(0,0,0,0.5);" class="schedule-text"></div>
-            <div style="display: flex; gap: 12px; pointer-events: auto;">
-                <ha-icon icon="mdi:close" class="schedule-cancel" style="cursor: pointer; opacity: 0.8; --mdc-icon-size: 16px; color: #ff5252;"></ha-icon>
-            </div>
-        `;
-
-        this.appendChild(this._overlayTemplate);
-
-        this._overlayTemplate.querySelector(".schedule-cancel").addEventListener("click", (e) => {
+        this._overlayTemplate.addEventListener("click", (e) => {
             e.stopPropagation();
-            if (this._activeScheduleId) {
-                this._hass.callService("entity_scheduler", "cancel_schedule", {
-                    schedule_id: this._activeScheduleId
-                });
-                this._overlayTemplate.style.opacity = "0";
-                this._overlayTemplate.style.pointerEvents = "none";
-                this._activeScheduleId = null;
+
+            // Toggle expansion
+            const toggleBtn = e.target.closest(".schedule-toggle");
+            if (toggleBtn) {
+                this._expanded = !this._expanded;
+                this._updateScheduleText();
+                return;
+            }
+
+            // Cancel action
+            const cancelBtn = e.target.closest(".schedule-cancel");
+            if (cancelBtn) {
+                const sid = cancelBtn.dataset.scheduleId;
+                if (sid) {
+                    this._hass.callService("entity_scheduler", "cancel_schedule", {
+                        schedule_id: sid
+                    });
+
+                    // Optimistic update
+                    if (this._mySchedules) {
+                        this._mySchedules = this._mySchedules.filter(s => s.schedule_id !== sid);
+                        if (this._mySchedules.length === 0) {
+                            this._overlayTemplate.style.opacity = "0";
+                            this._overlayTemplate.style.pointerEvents = "none";
+                        } else {
+                            this._updateScheduleText();
+                        }
+                    }
+                }
             }
         });
+
+        this.appendChild(this._overlayTemplate);
 
         this._setupHoldEvent();
 
@@ -355,8 +373,7 @@ class EntitySchedulerWrapper extends HTMLElement {
 
             if (mySchedules.length > 0) {
                 mySchedules.sort((a, b) => new Date(a.execute_at) - new Date(b.execute_at));
-                this._activeSchedule = mySchedules[0];
-                this._activeScheduleId = mySchedules[0].schedule_id;
+                this._mySchedules = mySchedules;
                 this._overlayTemplate.style.opacity = "1";
                 this._overlayTemplate.style.pointerEvents = "auto";
 
@@ -365,11 +382,12 @@ class EntitySchedulerWrapper extends HTMLElement {
                 }
                 this._updateScheduleText();
             } else {
-                this._activeSchedule = null;
-                this._activeScheduleId = null;
+                this._mySchedules = [];
                 if (this._overlayTemplate) {
                     this._overlayTemplate.style.opacity = "0";
                     this._overlayTemplate.style.pointerEvents = "none";
+                    this._expanded = false;
+                    this._overlayTemplate.style.maxHeight = "36px";
                 }
                 if (this._tickInterval) {
                     clearInterval(this._tickInterval);
@@ -382,27 +400,69 @@ class EntitySchedulerWrapper extends HTMLElement {
     }
 
     _updateScheduleText() {
-        if (!this._activeSchedule || !this._overlayTemplate) return;
+        if (!this._mySchedules || this._mySchedules.length === 0 || !this._overlayTemplate) return;
 
-        const executeAt = new Date(this._activeSchedule.execute_at);
         const now = new Date();
-        const diffSeconds = Math.max(0, Math.floor((executeAt - now) / 1000));
+        const formatTime = (executeAtStr, action) => {
+            const executeAt = new Date(executeAtStr);
+            const diffSeconds = Math.max(0, Math.floor((executeAt - now) / 1000));
 
-        const h = Math.floor(diffSeconds / 3600);
-        const m = Math.floor((diffSeconds % 3600) / 60);
-        const s = diffSeconds % 60;
+            const h = Math.floor(diffSeconds / 3600);
+            const m = Math.floor((diffSeconds % 3600) / 60);
+            const s = diffSeconds % 60;
 
-        let timeStr = "";
-        if (h > 0) timeStr += `${h}h `;
-        if (m > 0 || h > 0) timeStr += `${m}m `;
-        timeStr += `${s}s`;
+            let timeStr = "";
+            if (h > 0) timeStr += `${h}h `;
+            if (m > 0 || h > 0) timeStr += `${m}m `;
+            timeStr += `${s}s`;
 
-        let actionStr = this._activeSchedule.action.replace("_", " ");
+            const actionStr = action.replace("_", " ");
+            return `Will ${actionStr} in ${timeStr.trim()}`;
+        };
 
-        const textElement = this._overlayTemplate.querySelector(".schedule-text");
-        if (textElement) {
-            textElement.textContent = `Will ${actionStr} in ${timeStr.trim()}`;
+        const nearest = this._mySchedules[0];
+
+        let html = `
+            <div style="display: flex; justify-content: space-between; align-items: center; width: 100%; height: 20px; flex-shrink: 0;">
+                <div style="flex: 1; font-weight: 500; text-shadow: 0 1px 2px rgba(0,0,0,0.5); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                    ${this._mySchedules.length > 1 ? '<span style="opacity: 0.7;">Next: </span>' : ''}${formatTime(nearest.execute_at, nearest.action)}
+                </div>
+                <div style="display: flex; gap: 8px; pointer-events: auto; align-items: center;">
+                    ${this._mySchedules.length > 1 ? `<ha-icon icon="${this._expanded ? 'mdi:chevron-down' : 'mdi:chevron-up'}" class="schedule-toggle" style="cursor: pointer; opacity: 0.8; --mdc-icon-size: 20px; margin-right: 4px;"></ha-icon>` : ''}
+                    <ha-icon icon="mdi:close" class="schedule-cancel" data-schedule-id="${nearest.schedule_id}" style="cursor: pointer; opacity: 0.8; --mdc-icon-size: 16px; color: #ff5252;"></ha-icon>
+                </div>
+            </div>
+        `;
+
+        if (this._mySchedules.length > 1) {
+            html += `<div style="display: flex; flex-direction: column; gap: 8px; margin-top: 4px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.1); flex-shrink: 0;">`;
+            for (let i = 1; i < this._mySchedules.length; i++) {
+                const sched = this._mySchedules[i];
+                html += `
+                    <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                        <div style="flex: 1; opacity: 0.85; font-size: 12px;">${formatTime(sched.execute_at, sched.action)}</div>
+                        <div style="pointer-events: auto;">
+                            <ha-icon icon="mdi:close" class="schedule-cancel" data-schedule-id="${sched.schedule_id}" style="cursor: pointer; opacity: 0.8; --mdc-icon-size: 14px; color: #ff5252;"></ha-icon>
+                        </div>
+                    </div>
+                `;
+            }
+            html += `</div>`;
+
+            if (this._expanded) {
+                this._overlayTemplate.style.maxHeight = "400px";
+                this._overlayTemplate.style.padding = "8px 12px 12px 12px";
+            } else {
+                this._overlayTemplate.style.maxHeight = "36px";
+                this._overlayTemplate.style.padding = "8px 12px";
+            }
+        } else {
+            this._expanded = false;
+            this._overlayTemplate.style.maxHeight = "36px";
+            this._overlayTemplate.style.padding = "8px 12px";
         }
+
+        this._overlayTemplate.innerHTML = html;
     }
 }
 
