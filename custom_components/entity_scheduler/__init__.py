@@ -8,6 +8,7 @@ import uuid
 import voluptuous as vol
 
 from homeassistant.core import HomeAssistant, ServiceCall, callback
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.event import async_track_point_in_time
@@ -181,4 +182,14 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
 
     websocket_api.async_register_command(hass, ws_get_schedules)
 
+    return True
+
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Set up Entity Scheduler from a config entry."""
+    # The setup logic is primarily handled in async_setup because 
+    # the integration operates mostly via services, not per-entry instances.
+    return True
+
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Unload a config entry."""
     return True

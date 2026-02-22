@@ -1,0 +1,14 @@
+{
+    "title": "Entity Scheduler",
+    "config": {
+        "step": {
+            "user": {
+                "title": "Entity Scheduler Config",
+                "description": "Do you want to set up the Entity Scheduler integration? It works entirely via Service Calls and Frontend Lovelace cards. Click Submit to finish."
+            }
+        },
+        "abort": {
+            "single_instance_allowed": "Only a single instance of Entity Scheduler is allowed."
+        }
+    }
+}
