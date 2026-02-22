@@ -58,3 +58,23 @@ schedule_action:
         required: true
         selector:
           text: {}
+
+add_time:
+  name: Add Time
+  description: Adds or subtracts time from an active schedule.
+  fields:
+    schedule_id:
+      name: Schedule ID
+      description: The unique identifier of the schedule to modify.
+      required: true
+      example: "e44d2d48-3560-44bb-abd2-8a4db95c2e0b"
+      selector:
+        text:
+    seconds:
+      name: Seconds
+      description: Number of seconds to add (positive) or subtract (negative).
+      required: true
+      example: 600
+      selector:
+        number:
+          mode: box

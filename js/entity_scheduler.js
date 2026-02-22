@@ -291,6 +291,35 @@ class EntitySchedulerWrapper extends HTMLElement {
                         }
                     }
                 }
+                return;
+            }
+
+            // Add Time action
+            const addTimeBtn = e.target.closest(".schedule-add-time");
+            if (addTimeBtn) {
+                const sid = addTimeBtn.dataset.scheduleId;
+                const secs = parseInt(addTimeBtn.dataset.seconds, 10);
+                if (sid && secs) {
+                    this._hass.callService("entity_scheduler", "add_time", {
+                        schedule_id: sid,
+                        seconds: secs
+                    });
+                }
+                return;
+            }
+
+            // Subtract Time action
+            const subTimeBtn = e.target.closest(".schedule-sub-time");
+            if (subTimeBtn) {
+                const sid = subTimeBtn.dataset.scheduleId;
+                const secs = parseInt(subTimeBtn.dataset.seconds, 10);
+                if (sid && secs) {
+                    this._hass.callService("entity_scheduler", "add_time", {
+                        schedule_id: sid,
+                        seconds: secs
+                    });
+                }
+                return;
             }
         });
 
@@ -444,6 +473,8 @@ class EntitySchedulerWrapper extends HTMLElement {
             return `Will ${actionStr} in ${timeStr.trim()}`;
         };
 
+        const changeSeconds = this._config.status_bar_timer_change_duration !== undefined ? parseInt(this._config.status_bar_timer_change_duration, 10) : 600;
+
         const nearest = this._mySchedules[0];
 
         let html = `
@@ -452,7 +483,9 @@ class EntitySchedulerWrapper extends HTMLElement {
                     ${this._mySchedules.length > 1 ? '<span style="opacity: 0.7;">Next: </span>' : ''}${formatTime(nearest.execute_at, nearest.action)}
                 </div>
                 <div style="display: flex; gap: 8px; pointer-events: auto; align-items: center;">
-                    ${this._mySchedules.length > 1 ? `<ha-icon icon="${this._expanded ? 'mdi:chevron-down' : 'mdi:chevron-up'}" class="schedule-toggle" style="cursor: pointer; opacity: 0.8; --mdc-icon-size: 20px; margin-right: 4px;"></ha-icon>` : ''}
+                    <ha-icon icon="mdi:minus-circle-outline" class="schedule-sub-time" data-schedule-id="${nearest.schedule_id}" data-seconds="-${changeSeconds}" style="cursor: pointer; opacity: 0.8; --mdc-icon-size: 18px; color: #fff;"></ha-icon>
+                    <ha-icon icon="mdi:plus-circle-outline" class="schedule-add-time" data-schedule-id="${nearest.schedule_id}" data-seconds="${changeSeconds}" style="cursor: pointer; opacity: 0.8; --mdc-icon-size: 18px; color: #fff;"></ha-icon>
+                    ${this._mySchedules.length > 1 ? `<ha-icon icon="${this._expanded ? 'mdi:chevron-down' : 'mdi:chevron-up'}" class="schedule-toggle" style="cursor: pointer; opacity: 0.8; --mdc-icon-size: 20px; margin-right: 4px; margin-left: 4px;"></ha-icon>` : '<div style="width: 8px;"></div>'}
                     <ha-icon icon="mdi:close" class="schedule-cancel" data-schedule-id="${nearest.schedule_id}" style="cursor: pointer; opacity: 0.8; --mdc-icon-size: 16px; color: #ff5252;"></ha-icon>
                 </div>
             </div>
@@ -465,7 +498,10 @@ class EntitySchedulerWrapper extends HTMLElement {
                 html += `
                     <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
                         <div style="flex: 1; opacity: 0.85; font-size: 12px;">${formatTime(sched.execute_at, sched.action)}</div>
-                        <div style="pointer-events: auto;">
+                        <div style="display: flex; gap: 8px; pointer-events: auto; align-items: center;">
+                            <ha-icon icon="mdi:minus-circle-outline" class="schedule-sub-time" data-schedule-id="${sched.schedule_id}" data-seconds="-${changeSeconds}" style="cursor: pointer; opacity: 0.8; --mdc-icon-size: 16px; color: #fff;"></ha-icon>
+                            <ha-icon icon="mdi:plus-circle-outline" class="schedule-add-time" data-schedule-id="${sched.schedule_id}" data-seconds="${changeSeconds}" style="cursor: pointer; opacity: 0.8; --mdc-icon-size: 16px; color: #fff;"></ha-icon>
+                            <div style="width: 8px;"></div>
                             <ha-icon icon="mdi:close" class="schedule-cancel" data-schedule-id="${sched.schedule_id}" style="cursor: pointer; opacity: 0.8; --mdc-icon-size: 14px; color: #ff5252;"></ha-icon>
                         </div>
                     </div>

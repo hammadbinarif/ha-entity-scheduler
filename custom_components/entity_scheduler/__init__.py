@@ -164,6 +164,48 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
         schema=vol.Schema({vol.Required("schedule_id"): cv.string}),
     )
 
+    async def async_handle_add_time(call: ServiceCall):
+        """Handle the service call to add or subtract time from a schedule."""
+        schedule_id = call.data["schedule_id"]
+        seconds_to_add = call.data["seconds"]
+        
+        if schedule_id not in hass.data[DOMAIN]["schedules"]:
+            _LOGGER.warning("Attempted to add time to non-existent schedule: %s", schedule_id)
+            return
+            
+        schedule_data = hass.data[DOMAIN]["schedules"][schedule_id]
+        current_execute_at = dt_util.parse_datetime(schedule_data["execute_at"])
+        
+        # Calculate new time
+        new_execute_at = current_execute_at + timedelta(seconds=seconds_to_add)
+        now = dt_util.utcnow()
+        
+        # Clamp to now if the reduction puts it in the past (execute immediately)
+        if new_execute_at < now:
+            new_execute_at = now
+            
+        schedule_data["execute_at"] = new_execute_at.isoformat()
+        hass.data[DOMAIN]["schedules"][schedule_id] = schedule_data
+        
+        # Destroy old listener
+        if schedule_id in hass.data[DOMAIN]["listeners"]:
+            unsub = hass.data[DOMAIN]["listeners"].pop(schedule_id)
+            unsub()
+            
+        # Re-schedule and save
+        _schedule_task(schedule_id, schedule_data)
+        await _save_schedules()
+
+    hass.services.async_register(
+        DOMAIN,
+        "add_time",
+        async_handle_add_time,
+        schema=vol.Schema({
+            vol.Required("schedule_id"): cv.string,
+            vol.Required("seconds"): vol.Coerce(int)
+        }),
+    )
+
     @websocket_api.websocket_command(
         {
             vol.Required("type"): "entity_scheduler/get_schedules",
