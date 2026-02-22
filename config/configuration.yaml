@@ -2,6 +2,7 @@
 frontend:
 api:
 http:
+  server_host: 0.0.0.0
 logger:
   default: info
 
