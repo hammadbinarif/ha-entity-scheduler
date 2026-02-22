@@ -243,17 +243,11 @@ class EntitySchedulerWrapper extends HTMLElement {
         this._overlayTemplate.innerHTML = `
             <div style="flex: 1; font-weight: 500; text-shadow: 0 1px 2px rgba(0,0,0,0.5);" class="schedule-text"></div>
             <div style="display: flex; gap: 12px; pointer-events: auto;">
-                <ha-icon icon="mdi:pencil" class="schedule-edit" style="cursor: pointer; opacity: 0.8; --mdc-icon-size: 16px;"></ha-icon>
                 <ha-icon icon="mdi:close" class="schedule-cancel" style="cursor: pointer; opacity: 0.8; --mdc-icon-size: 16px; color: #ff5252;"></ha-icon>
             </div>
         `;
 
         this.appendChild(this._overlayTemplate);
-
-        this._overlayTemplate.querySelector(".schedule-edit").addEventListener("click", (e) => {
-            e.stopPropagation();
-            this._handleHold(e);
-        });
 
         this._overlayTemplate.querySelector(".schedule-cancel").addEventListener("click", (e) => {
             e.stopPropagation();
