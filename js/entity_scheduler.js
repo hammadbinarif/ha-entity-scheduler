@@ -180,12 +180,15 @@ class EntitySchedulerUI extends HTMLElement {
             delay_secs: secs
         });
 
-        // Close the browser_mod popup specifically on this device
-        const browserId = localStorage.getItem("browser_mod-browser-id") || window.browser_mod?.browserID;
-        const closeData = {};
-        if (browserId) closeData.browser_id = browserId;
-
-        this._hass.callService("browser_mod", "close_popup", closeData);
+        // Close the browser_mod popup specifically on this device via frontend DOM event
+        const event = new Event('ll-custom', { bubbles: true, composed: true });
+        event.detail = {
+            browser_mod: {
+                service: "browser_mod.close_popup",
+                data: {}
+            }
+        };
+        this.dispatchEvent(event);
     }
 }
 
@@ -373,21 +376,22 @@ class EntitySchedulerWrapper extends HTMLElement {
             return;
         }
 
-        // Trigger browser_mod popup via service call targeted to this specific browser
-        const browserId = localStorage.getItem("browser_mod-browser-id") || window.browser_mod?.browserID;
-        const popupData = {
-            title: "Schedule Action",
-            content: {
-                type: "custom:entity-scheduler-ui",
-                entity: entityId
+        // Trigger browser_mod popup via the native 'll-custom' DOM event
+        // This flawlessly captures only the current browser without needing explicit IDs
+        const event = new Event('ll-custom', { bubbles: true, composed: true });
+        event.detail = {
+            browser_mod: {
+                service: "browser_mod.popup",
+                data: {
+                    title: "Schedule Action",
+                    content: {
+                        type: "custom:entity-scheduler-ui",
+                        entity: entityId
+                    }
+                }
             }
         };
-
-        if (browserId) {
-            popupData.browser_id = browserId;
-        }
-
-        this._hass.callService("browser_mod", "popup", popupData);
+        this.dispatchEvent(event);
     }
 
     getCardSize() {
