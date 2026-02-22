@@ -180,8 +180,12 @@ class EntitySchedulerUI extends HTMLElement {
             delay_secs: secs
         });
 
-        // Close the browser_mod popup via standard Home Assistant service call
-        this._hass.callService("browser_mod", "close_popup", {});
+        // Close the browser_mod popup specifically on this device
+        const browserId = localStorage.getItem("browser_mod-browser-id") || window.browser_mod?.browserID;
+        const closeData = {};
+        if (browserId) closeData.browser_id = browserId;
+
+        this._hass.callService("browser_mod", "close_popup", closeData);
     }
 }
 
@@ -340,14 +344,21 @@ class EntitySchedulerWrapper extends HTMLElement {
             return;
         }
 
-        // Trigger browser_mod popup via service call
-        this._hass.callService("browser_mod", "popup", {
+        // Trigger browser_mod popup via service call targeted to this specific browser
+        const browserId = localStorage.getItem("browser_mod-browser-id") || window.browser_mod?.browserID;
+        const popupData = {
             title: "Schedule Action",
             content: {
                 type: "custom:entity-scheduler-ui",
                 entity: entityId
             }
-        });
+        };
+
+        if (browserId) {
+            popupData.browser_id = browserId;
+        }
+
+        this._hass.callService("browser_mod", "popup", popupData);
     }
 
     getCardSize() {
