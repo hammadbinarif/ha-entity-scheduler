@@ -110,6 +110,19 @@ class EntitySchedulerUI extends HTMLElement {
 
             this._updateDisplay();
         }
+
+        if (this._config && this._config.entity && !this._initialActionSet && hass.states[this._config.entity]) {
+            const stateObj = hass.states[this._config.entity];
+            this.selectedAction = stateObj.state === 'on' ? 'turn_off' : 'turn_on';
+
+            if (this.querySelector(".segmented-control")) {
+                this.querySelector(".segmented-control").setAttribute("data-selected", this.selectedAction);
+                this.querySelectorAll(".segment-btn").forEach(c => c.classList.remove("active"));
+                const activeBtn = this.querySelector(`.segment-btn[data-action="${this.selectedAction}"]`);
+                if (activeBtn) activeBtn.classList.add("active");
+            }
+            this._initialActionSet = true;
+        }
     }
 
     _handleTimeClick(e) {
