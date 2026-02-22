@@ -1,12 +1,17 @@
-# https://www.home-assistant.io/integrations/default_config/
-default_config:
-
-# https://www.home-assistant.io/integrations/homeassistant/
-homeassistant:
-  debug: true
-
-# https://www.home-assistant.io/integrations/logger/
+# We are bypassing default_config to prevent the go2rtc crash
+frontend:
+api:
+http:
 logger:
   default: info
-  logs:
-    custom_components.integration_blueprint: debug
+
+input_boolean:
+  test:
+    name: Test Entity
+    icon: mdi:test-tube
+
+entity_scheduler:
+browser_mod:
+recorder:
+history:
+logbook:

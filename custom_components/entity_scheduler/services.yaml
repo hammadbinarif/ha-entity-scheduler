@@ -1,0 +1,50 @@
+schedule_action:
+  name: Schedule Action
+  description: Schedule an action (turn_on, turn_off, toggle) for an entity after a certain delay.
+  fields:
+    entity_id:
+      name: Entity
+      description: The entity to act on.
+      required: true
+      selector:
+        entity:
+    action:
+      name: Action
+      description: The action to perform (e.g., turn_on, turn_off, toggle).
+      required: true
+      selector:
+        select:
+          options:
+            - turn_on
+            - turn_off
+            - toggle
+    delay_hours:
+      name: Delay (hours)
+      description: Delay in hours before the action is executed.
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 24
+          unit_of_measurement: hours
+          mode: box
+    delay_mins:
+      name: Delay (minutes)
+      description: Delay in minutes before the action is executed.
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 1440
+          unit_of_measurement: minutes
+          mode: box
+    delay_secs:
+      name: Delay (seconds)
+      description: Delay in seconds before the action is executed (added to minutes).
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 59
+          unit_of_measurement: seconds
+          mode: box
