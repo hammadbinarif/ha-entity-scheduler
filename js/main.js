@@ -197,6 +197,9 @@ class EntitySchedulerWrapper extends HTMLElement {
     }
 
     async _createCard() {
+        this.style.display = "block";
+        this.style.position = "relative";
+
         let tag = this._config.card.type;
         if (tag.startsWith("custom:")) {
             tag = tag.substr(7);
@@ -213,7 +216,63 @@ class EntitySchedulerWrapper extends HTMLElement {
         }
 
         this.appendChild(this._card);
+
+        this._overlayTemplate = document.createElement("div");
+        this._overlayTemplate.style.cssText = `
+            position: absolute;
+            bottom: 0px;
+            left: 0px;
+            right: 0px;
+            background: rgba(0, 0, 0, 0.75);
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+            color: #fff;
+            padding: 8px 12px;
+            font-size: 13px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom-left-radius: var(--ha-card-border-radius, 12px);
+            border-bottom-right-radius: var(--ha-card-border-radius, 12px);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s;
+            z-index: 10;
+        `;
+
+        this._overlayTemplate.innerHTML = `
+            <div style="flex: 1; font-weight: 500; text-shadow: 0 1px 2px rgba(0,0,0,0.5);" class="schedule-text"></div>
+            <div style="display: flex; gap: 12px; pointer-events: auto;">
+                <ha-icon icon="mdi:pencil" class="schedule-edit" style="cursor: pointer; opacity: 0.8; --mdc-icon-size: 16px;"></ha-icon>
+                <ha-icon icon="mdi:close" class="schedule-cancel" style="cursor: pointer; opacity: 0.8; --mdc-icon-size: 16px; color: #ff5252;"></ha-icon>
+            </div>
+        `;
+
+        this.appendChild(this._overlayTemplate);
+
+        this._overlayTemplate.querySelector(".schedule-edit").addEventListener("click", (e) => {
+            e.stopPropagation();
+            this._handleHold(e);
+        });
+
+        this._overlayTemplate.querySelector(".schedule-cancel").addEventListener("click", (e) => {
+            e.stopPropagation();
+            if (this._activeScheduleId) {
+                this._hass.callService("entity_scheduler", "cancel_schedule", {
+                    schedule_id: this._activeScheduleId
+                });
+                this._overlayTemplate.style.opacity = "0";
+                this._overlayTemplate.style.pointerEvents = "none";
+                this._activeScheduleId = null;
+            }
+        });
+
         this._setupHoldEvent();
+
+        if (!this._fetchInterval) {
+            this._fetchInterval = setInterval(() => this._fetchSchedules(), 2000);
+            setTimeout(() => this._fetchSchedules(), 100);
+        }
     }
 
     _setupHoldEvent() {
@@ -268,6 +327,88 @@ class EntitySchedulerWrapper extends HTMLElement {
 
     getCardSize() {
         return this._card && typeof this._card.getCardSize === "function" ? this._card.getCardSize() : 1;
+    }
+
+    disconnectedCallback() {
+        if (this._fetchInterval) {
+            clearInterval(this._fetchInterval);
+            this._fetchInterval = null;
+        }
+        if (this._tickInterval) {
+            clearInterval(this._tickInterval);
+            this._tickInterval = null;
+        }
+    }
+
+    connectedCallback() {
+        if (this._config && this._card && !this._fetchInterval) {
+            this._fetchInterval = setInterval(() => this._fetchSchedules(), 2000);
+            setTimeout(() => this._fetchSchedules(), 100);
+        }
+    }
+
+    async _fetchSchedules() {
+        if (!this._hass || !this._config) return;
+        const entityId = this._config.entity || this._config.card?.entity;
+        if (!entityId) return;
+
+        try {
+            const schedules = await this._hass.connection.sendMessagePromise({
+                type: 'entity_scheduler/get_schedules'
+            });
+
+            const mySchedules = schedules.filter(s => s.entity_id === entityId);
+
+            if (mySchedules.length > 0) {
+                mySchedules.sort((a, b) => new Date(a.execute_at) - new Date(b.execute_at));
+                this._activeSchedule = mySchedules[0];
+                this._activeScheduleId = mySchedules[0].schedule_id;
+                this._overlayTemplate.style.opacity = "1";
+                this._overlayTemplate.style.pointerEvents = "auto";
+
+                if (!this._tickInterval) {
+                    this._tickInterval = setInterval(() => this._updateScheduleText(), 1000);
+                }
+                this._updateScheduleText();
+            } else {
+                this._activeSchedule = null;
+                this._activeScheduleId = null;
+                if (this._overlayTemplate) {
+                    this._overlayTemplate.style.opacity = "0";
+                    this._overlayTemplate.style.pointerEvents = "none";
+                }
+                if (this._tickInterval) {
+                    clearInterval(this._tickInterval);
+                    this._tickInterval = null;
+                }
+            }
+        } catch (err) {
+            console.error("Entity Scheduler fetch failed:", err);
+        }
+    }
+
+    _updateScheduleText() {
+        if (!this._activeSchedule || !this._overlayTemplate) return;
+
+        const executeAt = new Date(this._activeSchedule.execute_at);
+        const now = new Date();
+        const diffSeconds = Math.max(0, Math.floor((executeAt - now) / 1000));
+
+        const h = Math.floor(diffSeconds / 3600);
+        const m = Math.floor((diffSeconds % 3600) / 60);
+        const s = diffSeconds % 60;
+
+        let timeStr = "";
+        if (h > 0) timeStr += `${h}h `;
+        if (m > 0 || h > 0) timeStr += `${m}m `;
+        timeStr += `${s}s`;
+
+        let actionStr = this._activeSchedule.action.replace("_", " ");
+
+        const textElement = this._overlayTemplate.querySelector(".schedule-text");
+        if (textElement) {
+            textElement.textContent = `Will ${actionStr} in ${timeStr.trim()}`;
+        }
     }
 }
 

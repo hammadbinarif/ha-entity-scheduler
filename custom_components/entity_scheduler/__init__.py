@@ -12,6 +12,7 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.event import async_track_point_in_time
 from homeassistant.util import dt as dt_util
+from homeassistant.components import websocket_api
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -142,5 +143,42 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
         async_handle_schedule_action,
         schema=SCHEDULE_SCHEMA,
     )
+
+    async def async_handle_cancel_schedule(call: ServiceCall):
+        """Handle the service call to cancel an action."""
+        schedule_id = call.data["schedule_id"]
+        
+        if schedule_id in hass.data[DOMAIN]["schedules"]:
+            del hass.data[DOMAIN]["schedules"][schedule_id]
+        if schedule_id in hass.data[DOMAIN]["listeners"]:
+            unsub = hass.data[DOMAIN]["listeners"].pop(schedule_id)
+            unsub()
+            
+        await _save_schedules()
+
+    hass.services.async_register(
+        DOMAIN,
+        "cancel_schedule",
+        async_handle_cancel_schedule,
+        schema=vol.Schema({vol.Required("schedule_id"): cv.string}),
+    )
+
+    @websocket_api.websocket_command(
+        {
+            vol.Required("type"): "entity_scheduler/get_schedules",
+        }
+    )
+    @callback
+    def ws_get_schedules(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict):
+        """Handle get_schedules websocket command."""
+        schedules = []
+        for schedule_id, schedule_data in hass.data[DOMAIN]["schedules"].items():
+            schedules.append({
+                "schedule_id": schedule_id,
+                **schedule_data
+            })
+        connection.send_result(msg["id"], schedules)
+
+    websocket_api.async_register_command(hass, ws_get_schedules)
 
     return True

@@ -48,3 +48,13 @@ schedule_action:
           max: 59
           unit_of_measurement: seconds
           mode: box
+  cancel_schedule:
+    name: Cancel Schedule
+    description: Cancel an active scheduled action by its ID.
+    fields:
+      schedule_id:
+        name: Schedule ID
+        description: The ID of the schedule to cancel.
+        required: true
+        selector:
+          text: {}
