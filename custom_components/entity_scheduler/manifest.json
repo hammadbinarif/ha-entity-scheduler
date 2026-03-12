@@ -7,7 +7,7 @@
     "@your-username"
   ],
   "requirements": [],
-  "version": "1.0.0",
+  "version": "1.0.3",
   "iot_class": "local_push",
   "config_flow": true
 }

@@ -112,9 +112,14 @@ class EntitySchedulerUI extends HTMLElement {
         }
 
         if (this._config && this._config.entity && !this._initialActionSet && hass.states[this._config.entity]) {
-            const stateObj = hass.states[this._config.entity];
-            this.selectedAction = stateObj.state === 'on' ? 'turn_off' : 'turn_on';
+            const defaultAction = this._config.default_action || "auto"; // "auto", "turn_on", "turn_off", "toggle"
 
+            if (defaultAction !== "auto" && ["turn_on", "turn_off", "toggle"].includes(defaultAction)) {
+                this.selectedAction = defaultAction;
+            } else {
+                const stateObj = hass.states[this._config.entity];
+                this.selectedAction = stateObj.state === 'on' ? 'turn_off' : 'turn_on';
+            }
             if (this.querySelector(".segmented-control")) {
                 this.querySelector(".segmented-control").setAttribute("data-selected", this.selectedAction);
                 this.querySelectorAll(".segment-btn").forEach(c => c.classList.remove("active"));
@@ -196,6 +201,24 @@ customElements.define("entity-scheduler-ui", EntitySchedulerUI);
 
 
 class EntitySchedulerWrapper extends HTMLElement {
+    static getConfigElement() {
+        return document.createElement("entity-scheduler-wrapper-editor");
+    }
+
+    static getStubConfig() {
+        return {
+            show_status_bar: true,
+            status_bar_timer_change_duration: 600,
+            popup_title: "Schedule Action",
+            status_bar_position: "top_right",
+            default_action: "auto",
+            trigger_action: "hold",
+            card: {
+                type: "button"
+            }
+        };
+    }
+
     setConfig(config) {
         if (!config || !config.card) {
             throw new Error("You need to define a 'card' object in the configuration");
@@ -237,96 +260,119 @@ class EntitySchedulerWrapper extends HTMLElement {
 
         this.appendChild(this._card);
 
-        this._overlayTemplate = document.createElement("div");
-        this._overlayTemplate.style.cssText = `
-            position: absolute;
-            bottom: 0px;
-            left: 0px;
-            right: 0px;
-            background: rgba(0, 0, 0, 0.75);
-            backdrop-filter: blur(4px);
-            -webkit-backdrop-filter: blur(4px);
-            color: #fff;
-            padding: 8px 12px;
-            font-size: 13px;
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
-            border-bottom-left-radius: var(--ha-card-border-radius, 12px);
-            border-bottom-right-radius: var(--ha-card-border-radius, 12px);
-            opacity: 0;
-            pointer-events: none;
-            overflow: hidden;
-            max-height: 36px;
-            box-sizing: border-box;
-            transition: max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1), padding 0.3s, opacity 0.3s;
-            z-index: 10;
-        `;
+        const showStatusBar = this._config.show_status_bar !== false;
 
-        this._overlayTemplate.addEventListener("click", (e) => {
-            e.stopPropagation();
+        if (showStatusBar) {
+            this._overlayTemplate = document.createElement("div");
 
-            // Toggle expansion
-            const toggleBtn = e.target.closest(".schedule-toggle");
-            if (toggleBtn) {
-                this._expanded = !this._expanded;
-                this._updateScheduleText();
-                return;
+            const position = this._config.status_bar_position || "top_right";
+            let positionCss = "";
+            let radiusCss = "";
+
+            if (position === "top_left") {
+                positionCss = "top: 0px; left: 0px;";
+                radiusCss = "border-top-left-radius: var(--ha-card-border-radius, 12px); border-bottom-right-radius: var(--ha-card-border-radius, 12px);";
+            } else if (position === "bottom_right") {
+                positionCss = "bottom: 0px; right: 0px;";
+                radiusCss = "border-bottom-right-radius: var(--ha-card-border-radius, 12px); border-top-left-radius: var(--ha-card-border-radius, 12px);";
+            } else if (position === "bottom_left") {
+                positionCss = "bottom: 0px; left: 0px;";
+                radiusCss = "border-bottom-left-radius: var(--ha-card-border-radius, 12px); border-top-right-radius: var(--ha-card-border-radius, 12px);";
+            } else { // default top_right
+                positionCss = "top: 0px; right: 0px;";
+                radiusCss = "border-top-right-radius: var(--ha-card-border-radius, 12px); border-bottom-left-radius: var(--ha-card-border-radius, 12px);";
             }
 
-            // Cancel action
-            const cancelBtn = e.target.closest(".schedule-cancel");
-            if (cancelBtn) {
-                const sid = cancelBtn.dataset.scheduleId;
-                if (sid) {
-                    this._hass.callService("entity_scheduler", "cancel_schedule", {
-                        schedule_id: sid
-                    });
+            this._overlayTemplate.style.cssText = `
+                position: absolute;
+                ${positionCss}
+                width: fit-content;
+                min-width: 50%;
+                max-width: 100%;
+                background: rgba(0, 0, 0, 0.75);
+                backdrop-filter: blur(4px);
+                -webkit-backdrop-filter: blur(4px);
+                color: #fff;
+                padding: 4px 8px;
+                font-size: 11.5px;
+                display: flex;
+                flex-direction: column;
+                gap: 6px;
+                ${radiusCss}
+                opacity: 0;
+                pointer-events: none;
+                overflow: hidden;
+                max-height: 28px;
+                box-sizing: border-box;
+                transition: max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1), padding 0.3s, opacity 0.3s;
+                z-index: 10;
+            `;
 
-                    // Optimistic update
-                    if (this._mySchedules) {
-                        this._mySchedules = this._mySchedules.filter(s => s.schedule_id !== sid);
-                        if (this._mySchedules.length === 0) {
-                            this._overlayTemplate.style.opacity = "0";
-                            this._overlayTemplate.style.pointerEvents = "none";
-                        } else {
-                            this._updateScheduleText();
+            this._overlayTemplate.addEventListener("click", (e) => {
+                e.stopPropagation();
+
+                // Toggle expansion
+                const toggleBtn = e.target.closest(".schedule-toggle");
+                if (toggleBtn) {
+                    this._expanded = !this._expanded;
+                    this._updateScheduleText();
+                    return;
+                }
+
+                // Cancel action
+                const cancelBtn = e.target.closest(".schedule-cancel");
+                if (cancelBtn) {
+                    const sid = cancelBtn.dataset.scheduleId;
+                    if (sid) {
+                        this._hass.callService("entity_scheduler", "cancel_schedule", {
+                            schedule_id: sid
+                        });
+
+                        // Optimistic update
+                        if (this._mySchedules) {
+                            this._mySchedules = this._mySchedules.filter(s => s.schedule_id !== sid);
+                            if (this._mySchedules.length === 0) {
+                                this._overlayTemplate.style.opacity = "0";
+                                this._overlayTemplate.style.pointerEvents = "none";
+                            } else {
+                                this._updateScheduleText();
+                            }
                         }
                     }
+                    return;
                 }
-                return;
-            }
 
-            // Add Time action
-            const addTimeBtn = e.target.closest(".schedule-add-time");
-            if (addTimeBtn) {
-                const sid = addTimeBtn.dataset.scheduleId;
-                const secs = parseInt(addTimeBtn.dataset.seconds, 10);
-                if (sid && secs) {
-                    this._hass.callService("entity_scheduler", "add_time", {
-                        schedule_id: sid,
-                        seconds: secs
-                    });
+                // Add Time action
+                const addTimeBtn = e.target.closest(".schedule-add-time");
+                if (addTimeBtn) {
+                    const sid = addTimeBtn.dataset.scheduleId;
+                    const secs = parseInt(addTimeBtn.dataset.seconds, 10);
+                    if (sid && secs) {
+                        this._hass.callService("entity_scheduler", "add_time", {
+                            schedule_id: sid,
+                            seconds: secs
+                        });
+                    }
+                    return;
                 }
-                return;
-            }
 
-            // Subtract Time action
-            const subTimeBtn = e.target.closest(".schedule-sub-time");
-            if (subTimeBtn) {
-                const sid = subTimeBtn.dataset.scheduleId;
-                const secs = parseInt(subTimeBtn.dataset.seconds, 10);
-                if (sid && secs) {
-                    this._hass.callService("entity_scheduler", "add_time", {
-                        schedule_id: sid,
-                        seconds: secs
-                    });
+                // Subtract Time action
+                const subTimeBtn = e.target.closest(".schedule-sub-time");
+                if (subTimeBtn) {
+                    const sid = subTimeBtn.dataset.scheduleId;
+                    const secs = parseInt(subTimeBtn.dataset.seconds, 10);
+                    if (sid && secs) {
+                        this._hass.callService("entity_scheduler", "add_time", {
+                            schedule_id: sid,
+                            seconds: secs
+                        });
+                    }
+                    return;
                 }
-                return;
-            }
-        });
+            });
 
-        this.appendChild(this._overlayTemplate);
+            this.appendChild(this._overlayTemplate);
+        }
 
         this._setupHoldEvent();
 
@@ -337,44 +383,58 @@ class EntitySchedulerWrapper extends HTMLElement {
     }
 
     _setupHoldEvent() {
-        let holdTimer;
-        let heldDown = false;
+        const triggerAction = this._config.trigger_action || "hold"; // "hold", "tap", "double_tap"
 
-        // Use event capturing to intercept interactions before the child card handles them as taps
-        this.addEventListener("pointerdown", (e) => {
-            heldDown = true;
-            holdTimer = setTimeout(() => {
-                if (heldDown) {
-                    this._handleHold(e);
-                    heldDown = false;
-                }
-            }, 500); // 500ms delay for hold_action
-        }, { capture: true });
+        if (triggerAction === "hold") {
+            let holdTimer;
+            let heldDown = false;
 
-        this.addEventListener("pointerup", () => {
-            heldDown = false;
-            clearTimeout(holdTimer);
-        }, { capture: true });
+            // Use event capturing to intercept interactions before the child card handles them as taps
+            this.addEventListener("pointerdown", (e) => {
+                heldDown = true;
+                holdTimer = setTimeout(() => {
+                    if (heldDown) {
+                        this._handleAction(e);
+                        heldDown = false;
+                    }
+                }, 500); // 500ms delay for hold_action
+            }, { capture: true });
 
-        this.addEventListener("pointerleave", () => {
-            heldDown = false;
-            clearTimeout(holdTimer);
-        }, { capture: true });
+            this.addEventListener("pointerup", () => {
+                heldDown = false;
+                clearTimeout(holdTimer);
+            }, { capture: true });
+
+            this.addEventListener("pointerleave", () => {
+                heldDown = false;
+                clearTimeout(holdTimer);
+            }, { capture: true });
+        } else if (triggerAction === "tap") {
+            this.addEventListener("click", (e) => {
+                this._handleAction(e);
+            }, { capture: true });
+        } else if (triggerAction === "double_tap") {
+            this.addEventListener("dblclick", (e) => {
+                this._handleAction(e);
+            }, { capture: true });
+        }
     }
 
-    _handleHold(e) {
+    _handleAction(e) {
         if (!this._hass) return;
 
         // We block the default long press logic (e.g. standard info dialogs)
         e.stopPropagation();
         e.preventDefault();
 
-        const entityId = this._config.entity || this._config.card.entity;
+        const entityId = this._config.card?.entity;
 
         if (!entityId) {
-            console.warn("Entity Scheduler: No entity provided in configuration or child card for hold action.");
+            console.warn("Entity Scheduler: No entity provided in child card for hold action.");
             return;
         }
+
+        const popupTitle = this._config.popup_title || "Schedule Action";
 
         // Trigger browser_mod popup via the native 'll-custom' DOM event
         // This flawlessly captures only the current browser without needing explicit IDs
@@ -383,7 +443,7 @@ class EntitySchedulerWrapper extends HTMLElement {
             browser_mod: {
                 service: "browser_mod.popup",
                 data: {
-                    title: "Schedule Action",
+                    title: popupTitle,
                     content: {
                         type: "custom:entity-scheduler-ui",
                         entity: entityId
@@ -418,7 +478,7 @@ class EntitySchedulerWrapper extends HTMLElement {
 
     async _fetchSchedules() {
         if (!this._hass || !this._config) return;
-        const entityId = this._config.entity || this._config.card?.entity;
+        const entityId = this._config.card?.entity;
         if (!entityId) return;
 
         try {
@@ -444,7 +504,7 @@ class EntitySchedulerWrapper extends HTMLElement {
                     this._overlayTemplate.style.opacity = "0";
                     this._overlayTemplate.style.pointerEvents = "none";
                     this._expanded = false;
-                    this._overlayTemplate.style.maxHeight = "36px";
+                    this._overlayTemplate.style.maxHeight = "28px";
                 }
                 if (this._tickInterval) {
                     clearInterval(this._tickInterval);
@@ -473,8 +533,12 @@ class EntitySchedulerWrapper extends HTMLElement {
             if (m > 0 || h > 0) timeStr += `${m}m `;
             timeStr += `${s}s`;
 
-            const actionStr = action.replace("_", " ");
-            return `Will ${actionStr} in ${timeStr.trim()}`;
+            let actionIcon = "mdi:clock-outline";
+            if (action === "turn_on") actionIcon = "mdi:toggle-switch";
+            else if (action === "turn_off") actionIcon = "mdi:toggle-switch-off-outline";
+            else if (action === "toggle") actionIcon = "mdi:swap-horizontal";
+
+            return `<ha-icon icon="${actionIcon}" style="--mdc-icon-size: 16px; margin-right: 4px; vertical-align: middle;"></ha-icon><span style="vertical-align: middle;">${timeStr.trim()}</span>`;
         };
 
         const changeSeconds = this._config.status_bar_timer_change_duration !== undefined ? parseInt(this._config.status_bar_timer_change_duration, 10) : 600;
@@ -510,7 +574,7 @@ class EntitySchedulerWrapper extends HTMLElement {
                 const sched = this._mySchedules[i];
                 html += `
                     <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
-                        <div style="flex: 1; opacity: 0.85; font-size: 12px;">${formatTime(sched.execute_at, sched.action)}</div>
+                        <div style="flex: 1; opacity: 0.85; font-size: 11px;">${formatTime(sched.execute_at, sched.action)}</div>
                         <div style="display: flex; gap: 8px; pointer-events: auto; align-items: center;">
                             <ha-icon icon="mdi:minus-circle-outline" class="schedule-sub-time schedule-icon-btn" data-schedule-id="${sched.schedule_id}" data-seconds="-${changeSeconds}" style="cursor: pointer; opacity: 0.8; --mdc-icon-size: 16px; color: #fff;"></ha-icon>
                             <ha-icon icon="mdi:plus-circle-outline" class="schedule-add-time schedule-icon-btn" data-schedule-id="${sched.schedule_id}" data-seconds="${changeSeconds}" style="cursor: pointer; opacity: 0.8; --mdc-icon-size: 16px; color: #fff;"></ha-icon>
@@ -524,21 +588,180 @@ class EntitySchedulerWrapper extends HTMLElement {
 
             if (this._expanded) {
                 this._overlayTemplate.style.maxHeight = "400px";
-                this._overlayTemplate.style.padding = "8px 12px 12px 12px";
+                this._overlayTemplate.style.padding = "4px 8px 8px 8px";
             } else {
-                this._overlayTemplate.style.maxHeight = "36px";
-                this._overlayTemplate.style.padding = "8px 12px";
+                this._overlayTemplate.style.maxHeight = "28px";
+                this._overlayTemplate.style.padding = "4px 8px";
             }
         } else {
             this._expanded = false;
-            this._overlayTemplate.style.maxHeight = "36px";
-            this._overlayTemplate.style.padding = "8px 12px";
+            this._overlayTemplate.style.maxHeight = "28px";
+            this._overlayTemplate.style.padding = "4px 8px";
         }
 
         this._overlayTemplate.innerHTML = html;
     }
 }
 
+class EntitySchedulerWrapperEditor extends HTMLElement {
+    setConfig(config) {
+        this._config = config;
+
+        if (this._form) {
+            this._form.data = this._config;
+        }
+        if (this._cardEditor) {
+            this._cardEditor.value = this._config.card;
+        }
+
+        if (!this._initialized) {
+            this._tryRender();
+        }
+    }
+
+    set hass(hass) {
+        this._hass = hass;
+        if (this._form) {
+            this._form.hass = hass;
+        }
+        if (this._cardEditor) {
+            this._cardEditor.hass = hass;
+        }
+
+        if (!this._initialized) {
+            this._tryRender();
+        }
+    }
+
+    set lovelace(ll) {
+        this._lovelace = ll;
+        if (this._cardEditor) {
+            this._cardEditor.lovelace = ll;
+        }
+    }
+
+    async _tryRender() {
+        if (!this._hass || !this._config || this._rendering) {
+            return;
+        }
+        this._rendering = true;
+
+        if (window.loadCardHelpers) {
+            await window.loadCardHelpers();
+        }
+
+        const schema = [
+            { name: "show_status_bar", selector: { boolean: {} } },
+            { name: "status_bar_timer_change_duration", selector: { number: { min: 1, mode: "box" } } },
+            { name: "popup_title", selector: { text: {} } },
+            {
+                name: "status_bar_position",
+                selector: {
+                    select: {
+                        options: [
+                            { value: "top_right", label: "Top Right" },
+                            { value: "top_left", label: "Top Left" },
+                            { value: "bottom_right", label: "Bottom Right" },
+                            { value: "bottom_left", label: "Bottom Left" }
+                        ]
+                    }
+                }
+            },
+            {
+                name: "default_action",
+                selector: {
+                    select: {
+                        options: [
+                            { value: "auto", label: "Auto" },
+                            { value: "turn_on", label: "Turn On" },
+                            { value: "turn_off", label: "Turn Off" },
+                            { value: "toggle", label: "Toggle" }
+                        ]
+                    }
+                }
+            },
+            {
+                name: "trigger_action",
+                selector: {
+                    select: {
+                        options: [
+                            { value: "hold", label: "Hold" },
+                            { value: "tap", label: "Tap" },
+                            { value: "double_tap", label: "Double Tap" }
+                        ]
+                    }
+                }
+            }
+        ];
+
+        this.innerHTML = "";
+        const form = document.createElement("ha-form");
+        form.hass = this._hass;
+        form.data = this._config;
+        form.schema = schema;
+        form.computeLabel = (s) => {
+            switch (s.name) {
+                case "show_status_bar": return "Show Status Bar";
+                case "status_bar_timer_change_duration": return "Status Bar Timer Change Duration (seconds)";
+                case "popup_title": return "Popup Title";
+                case "status_bar_position": return "Status Bar Position";
+                case "default_action": return "Default Action";
+                case "trigger_action": return "Trigger Action";
+                default: return s.name;
+            }
+        };
+
+        this._form = form;
+
+        form.addEventListener("value-changed", (ev) => {
+            ev.stopPropagation();
+            const newConfig = ev.detail.value;
+
+            this.dispatchEvent(new CustomEvent("config-changed", {
+                detail: { config: newConfig },
+                bubbles: true,
+                composed: true,
+            }));
+        });
+
+        // Add the visual card editor for the wrapped card
+        const cardEditor = document.createElement("hui-card-element-editor");
+        cardEditor.hass = this._hass;
+        if (this._lovelace) {
+            cardEditor.lovelace = this._lovelace;
+        }
+        cardEditor.value = this._config.card;
+        cardEditor.addEventListener("config-changed", (ev) => {
+            ev.stopPropagation();
+            if (!ev.detail.value) return;
+
+            const newConfig = { ...this._config, card: ev.detail.value };
+            this.dispatchEvent(new CustomEvent("config-changed", {
+                detail: { config: newConfig },
+                bubbles: true,
+                composed: true,
+            }));
+        });
+
+        this._cardEditor = cardEditor;
+
+        const cardLabel = document.createElement("h3");
+        cardLabel.textContent = "Inner Card Configuration";
+        cardLabel.style.margin = "24px 0 8px 0";
+        cardLabel.style.fontSize = "16px";
+        cardLabel.style.fontWeight = "400";
+        cardLabel.style.color = "var(--primary-text-color)";
+
+        this.appendChild(form);
+        this.appendChild(cardLabel);
+        this.appendChild(cardEditor);
+
+        this._initialized = true;
+        this._rendering = false;
+    }
+}
+
+customElements.define("entity-scheduler-wrapper-editor", EntitySchedulerWrapperEditor);
 customElements.define("entity-scheduler-wrapper", EntitySchedulerWrapper);
 
 window.customCards = window.customCards || [];
